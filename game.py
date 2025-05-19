@@ -125,6 +125,8 @@ enemyHit_sfx = pygame.mixer.Sound("sounds/enemyHit.wav")
 playerHit_sfx = pygame.mixer.Sound("sounds/playerHit.wav")
 
 enemies = []
+enemy_varients = ["normal", "fast", "tank"]
+
 knives = []
 
 knife_level = 0
@@ -133,6 +135,7 @@ knife_level = 0
 last_sword_target_index = None
 last_attack_time = 0
 attack_delay = 0.1
+knife_damage = 2.5
 
 def spawn_knife(plr_x, plr_y, angle):
     knives.append([plr_x + 16, plr_y + 16, angle, 0, pygame.time.get_ticks(), knife_sprite.copy(), True, 0, 0, 'orbiting', None, time.time()])
@@ -173,7 +176,7 @@ def knife_attack(enemies):
                 knife[9] = 'attacking'
                 knife[10] = i
                 last_attack_time = now
-
+                
 def update_knives(enemies, plr_x, plr_y):
     return_speed = 10
     attack_speed = 15
@@ -187,15 +190,26 @@ def update_knives(enemies, plr_x, plr_y):
                 knife[7] = 0
                 knife[8] = 0
                 continue
+                
             ex, ey = enemies[target_index][0], enemies[target_index][1]
             dx, dy = ex - knife[0], ey - knife[1]
             dist = math.hypot(dx, dy)
+            
             if dist < 5:
                 knife[9] = 'returning'
                 knife[10] = None
                 knife[7] = 0
                 knife[8] = 0
                 continue
+                
+            dist_to_player = math.hypot((plr_x + 16) - knife[0], (plr_y + 16) - knife[1])
+            if dist_to_player > 1000:
+                knife[9] = 'returning'
+                knife[10] = None
+                knife[7] = 0
+                knife[8] = 0
+                continue
+                
             angle = math.atan2(dy, dx)
             deg_angle = math.degrees(angle)
             knife[5] = pygame.transform.rotate(knife_sprite.copy(), -deg_angle + 90)
@@ -203,9 +217,11 @@ def update_knives(enemies, plr_x, plr_y):
             knife[8] = math.sin(angle) * attack_speed
             knife[0] += knife[7]
             knife[1] += knife[8]
+            
         elif state == 'returning':
             dx, dy = (plr_x + 16) - knife[0], (plr_y + 16) - knife[1]
             dist = math.hypot(dx, dy)
+            
             if dist < 5:
                 knife[9] = 'orbiting'
                 knife[11] = time.time()
@@ -213,11 +229,15 @@ def update_knives(enemies, plr_x, plr_y):
                 knife[8] = 0
                 knife[5] = knife_sprite.copy()
                 continue
+                
             angle = math.atan2(dy, dx)
+            deg_angle = math.degrees(angle)
+            knife[5] = pygame.transform.rotate(knife_sprite.copy(), -deg_angle + 90)
             knife[7] = math.cos(angle) * return_speed
             knife[8] = math.sin(angle) * return_speed
             knife[0] += knife[7]
             knife[1] += knife[8]
+
 
 def draw_knives():
     rotate_knife(plr_x, plr_y)
@@ -244,6 +264,13 @@ def reset_level_up_cards():
 
 
 def spawn_enemy():
+    varient = random.choice(enemy_varients)
+    if varient == "normal":
+        speed = 1
+    elif varient == "fast":
+        speed = 2.5
+    elif varient == "tank":
+        speed = 0.5
     side = random.choice(['bottom', 'left', 'right', 'left', 'right', 'left', 'right'])
 
     if side == 'bottom':
@@ -257,7 +284,7 @@ def spawn_enemy():
         enemy_y = random.randint(0, HEIGHT)
 
     enemy_is_facing_right = enemy_x < plr_x
-    enemies.append([enemy_x, enemy_y, enemy_is_facing_right, 20, 0, 0])  
+    enemies.append([enemy_x, enemy_y, enemy_is_facing_right, 20, 0, 0, varient, speed])  
 
 
 def spawn_first_enemies():
@@ -328,7 +355,16 @@ def knife_card(card_pos):
     level_rect = level_text.get_rect(center=(card_pos - 24 + 180, HEIGHT // 2))
 
 
-    info_text1 = level_font.render("    +1 knife" if knife_level > 0 else "     It protects you", True, (255, 255, 255))
+    if knife_level == 0:
+        text = "    It protects you"
+    elif knife_level < 4:
+        text = "    +1 knife"
+    elif knife_level < 7:
+        text = "    +2.5 Damage"
+    else:
+        text = "    +1 Damage"
+
+    info_text1 = level_font.render(text, True, (255, 255, 255))
 
     info_rect1 = info_text1.get_rect(center=(card_pos - 50 + 180, HEIGHT // 2 + 50))
 
@@ -386,7 +422,7 @@ def draw_card3():
 
 
 def level_up_ability_check(selected_card):
-    global plr_health, fireball_level, fireball_regen_time, fireball_size, fireball_cooldown, inventory, knife_level
+    global plr_health, fireball_level, fireball_regen_time, fireball_size, fireball_cooldown, inventory, knife_level, knife_damage
 
     if selected_card == card1_pos and card1_ability == "fireball" or \
         selected_card == card2_pos and card2_ability == "fireball" or \
@@ -412,8 +448,13 @@ def level_up_ability_check(selected_card):
     if selected_card == card1_pos and card1_ability == "knife" or \
         selected_card == card2_pos and card2_ability == "knife" or \
         selected_card == card3_pos and card3_ability == "knife":
+            if knife_level < 4:
+                spawn_knife(plr_x, plr_y, knife_level * 22)
+            elif knife_level < 7:
+                knife_damage += 2.5
+            else:
+                knife_damage += 1
             knife_level += 1
-            spawn_knife(plr_x, plr_y, knife_level * 22)
         
 
 
@@ -759,7 +800,7 @@ def update_enemies():
     global enemies, plr_health, last_hit_time, sword_hit
 
     for i in range(len(enemies) - 1, -1, -1):
-        enemy_x, enemy_y, enemy_is_facing_right, enemy_health, enemy_vx, enemy_vy = enemies[i]
+        enemy_x, enemy_y, enemy_is_facing_right, enemy_health, enemy_vx, enemy_vy, enemy_varient, enemy_speed = enemies[i]
 
         dx, dy = normalize(enemy_x, enemy_y)
         sep_force_x, sep_force_y = separation(i)
@@ -771,8 +812,11 @@ def update_enemies():
             dx /= distance
             dy /= distance
 
-        enemy_x += dx * 1
-        enemy_y += dy * 1
+        enemy_x += dx * enemy_speed
+        enemy_y += dy * enemy_speed
+
+
+        
 
         window.blit(
             pygame.transform.flip(enemy_sprite, True, False)
@@ -800,19 +844,30 @@ def update_enemies():
             damage_text(10, enemy_x, enemy_y)
             enemy_health -= 10
 
-        
         for knife in knives:
-            if knife_mask.overlap(enemy_mask, (knife[0] - enemy_x, knife[1] - enemy_y)):
-                
+            if knife[9] == 'attacking' and knife_mask.overlap(enemy_mask, (int(knife[0] - enemy_x), int(knife[1] - enemy_y))):
                 now = time.time()
                 if i not in enemy_hit_timers or now - enemy_hit_timers[i] > 0.2:
                     enemyHit_sfx.play()
-                    damage_text(2.5, enemy_x, enemy_y)
-                    enemy_health -= 2.5
+                    damage_text(knife_damage, enemy_x, enemy_y)
+                    enemy_health -= knife_damage
                     enemy_vx, enemy_vy = enemy_hit_knockback(enemy_x, enemy_y)
                     enemy_hit_timers[i] = now
+                    
+                    if knife[10] == i:
+                        knife[9] = 'returning'
+                        knife[10] = None
+                        knife[7] = 0
+                        knife[8] = 0
 
         if enemy_health <= 0:
+            for knife in knives:
+                if knife[9] == 'attacking' and knife[10] == i:
+                    knife[9] = 'returning'
+                    knife[10] = None
+                    knife[7] = 0
+                    knife[8] = 0
+                    
             enemies.pop(i)
             spawn_xp(enemy_x, enemy_y)
             continue
@@ -843,20 +898,17 @@ def update_difficulty():
         enemy_spawn_speed = 1
         xpgain = 4
     elif elapsed_time > 100:
-        enemy_spawn_speed = 0.5
+        enemy_spawn_speed = 0.12
         xpgain = 3.5
     elif elapsed_time > 150:
-        enemy_spawn_speed = 0.1
+        enemy_spawn_speed = 0.08
         xpgain = 3
     elif elapsed_time > 300:
         xpgain = 2.5
-        enemy_spawn_speed = 0.08
-    elif elapsed_time > 500:
-        enemy_spawn_speed = 0.06
-    elif elapsed_time > 600:
-        enemy_spawn_speed = 0.03
-    elif elapsed_time > 800:
         enemy_spawn_speed = 0.02
+    elif elapsed_time > 500:
+        enemy_spawn_speed = 0.01
+
 
 
 def handle_input():
