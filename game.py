@@ -616,7 +616,7 @@ def update_fireballs():
 
 def fireball_hit_enemy(fireball_index):
     active_fireballs[fireball_index]['enemies_hit'] += 1
-    max_enemies = 1000
+    max_enemies = 14
     return active_fireballs[fireball_index]['enemies_hit'] >= max_enemies
 
 
@@ -886,23 +886,20 @@ def update_difficulty():
 
     elapsed_time = time.time() - difficulty_start_time
 
-    if elapsed_time > 20:
-        enemy_spawn_speed = 1.2
-    elif elapsed_time > 50:
-        enemy_spawn_speed = 1
-        xpgain = 4
-    elif elapsed_time > 100:
-        enemy_spawn_speed = 0.12
-        xpgain = 3.5
-    elif elapsed_time > 150:
-        enemy_spawn_speed = 0.08
-        xpgain = 3
-    elif elapsed_time > 300:
+    if elapsed_time > 300:
+        enemy_spawn_speed = 0.15
         xpgain = 2.5
-        enemy_spawn_speed = 0.02
-    elif elapsed_time > 500:
-        enemy_spawn_speed = 0.01
-
+    elif elapsed_time > 150:
+        enemy_spawn_speed = 0.25
+        xpgain = 3
+    elif elapsed_time > 100:
+        enemy_spawn_speed = 0.3
+        xpgain = 3.5
+    elif elapsed_time > 50:
+        enemy_spawn_speed = 0.8
+        xpgain = 4
+    elif elapsed_time > 20:
+        enemy_spawn_speed = 1.2
 
 
 def handle_input():
@@ -1063,6 +1060,7 @@ spawn_first_enemies()
 
 while running:
     fireball = pygame.transform.scale(fireball_image, fireball_size)
+    fireball_mask = pygame.mask.from_surface(fireball)
 
     if on_level_up_screen:
         handle_level_up_screen()
