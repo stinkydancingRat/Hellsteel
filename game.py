@@ -92,6 +92,7 @@ heart_icon = pygame.transform.scale(heart_image, (160,160))
 
 sword_swing_image = pygame.image.load("sprites/swordSwing.png").convert_alpha()
 sword_swing_sprite = pygame.transform.scale(sword_swing_image, (90, 96))
+sword_swing_mask = pygame.mask.from_surface(sword_swing_sprite)
 
 sword_image = pygame.image.load("sprites/sword.png").convert_alpha()
 sword_sprite = pygame.transform.scale(sword_image, (20, 32))
@@ -101,15 +102,26 @@ level_up_card = pygame.transform.scale(level_up_card_image, (320, 640))
 
 xp_orb_image = pygame.image.load("sprites/xpOrb.png").convert_alpha()
 xp_orb_sprite = pygame.transform.scale(xp_orb_image, (16, 16))
+xp_mask = pygame.mask.from_surface(xp_orb_sprite)
 
 player_image = pygame.image.load("sprites/player.png").convert_alpha()
 player_sprite = pygame.transform.scale(player_image, (32, 32))
+player_mask = pygame.mask.from_surface(player_sprite)
 
 enemy_image = pygame.image.load("sprites/enemy.png").convert_alpha()
 enemy_sprite = pygame.transform.scale(enemy_image, (32, 32))
 enemy_mask = pygame.mask.from_surface(enemy_sprite)
 
+fast_enemy_image = pygame.image.load("sprites/fastEnemy.png").convert_alpha()
+fast_enemy_sprite = pygame.transform.scale(fast_enemy_image, (30, 32))
+fast_enemy_mask = pygame.mask.from_surface(fast_enemy_sprite)
+
+tank_enemy_image = pygame.image.load("sprites/tankEnemy.png").convert_alpha()
+tank_enemy_sprite = pygame.transform.scale(tank_enemy_image, (48, 48))
+tank_enemy_mask = pygame.mask.from_surface(tank_enemy_sprite)
+
 fireball_image = pygame.image.load("sprites/fireball.png").convert_alpha()
+fireball_mask = pygame.mask.from_surface(fireball_image)
 fireball_icon = pygame.transform.scale(fireball_image, (160, 200))
 
 retryButton_image = pygame.image.load("sprites/retryButton.png").convert_alpha()
@@ -125,7 +137,7 @@ enemyHit_sfx = pygame.mixer.Sound("sounds/enemyHit.wav")
 playerHit_sfx = pygame.mixer.Sound("sounds/playerHit.wav")
 
 enemies = []
-enemy_varients = ["normal", "fast", "tank"]
+enemy_varients = ["normal", "fast", "tank", "normal", "normal", "normal", "fast"]
 
 knives = []
 
@@ -266,10 +278,13 @@ def reset_level_up_cards():
 def spawn_enemy():
     varient = random.choice(enemy_varients)
     if varient == "normal":
+        health = 20
         speed = 1
     elif varient == "fast":
-        speed = 2.5
+        health = 10
+        speed = 2
     elif varient == "tank":
+        health = 45
         speed = 0.5
     side = random.choice(['bottom', 'left', 'right', 'left', 'right', 'left', 'right'])
 
@@ -284,7 +299,7 @@ def spawn_enemy():
         enemy_y = random.randint(0, HEIGHT)
 
     enemy_is_facing_right = enemy_x < plr_x
-    enemies.append([enemy_x, enemy_y, enemy_is_facing_right, 20, 0, 0, varient, speed])  
+    enemies.append([enemy_x, enemy_y, enemy_is_facing_right, health, 0, 0, varient, speed])  
 
 
 def spawn_first_enemies():
@@ -479,7 +494,9 @@ def separation(enemy_index):
             dx = enemies[enemy_index][0] - other_enemy_x
             dy = enemies[enemy_index][1] - other_enemy_y
             distance = math.hypot(dx, dy)
-            if distance < 32 and distance > 0:
+            seperation_range = 48 if enemy[6] == "tank" else 32
+            if distance < seperation_range and distance > 0:
+
                 separation_force_x += dx / distance
                 separation_force_y += dy / distance
 
@@ -510,33 +527,8 @@ def enemy_hit_knockback(enemy_x, enemy_y):
     knockback_distance = 6
     return dx * knockback_distance, dy * knockback_distance
 
-def player_check_collision(obj_x, obj_y, obj_width, obj_height):
-    return (
-            plr_x + 30 >= obj_x and
-            plr_x + 2 <= obj_x + obj_width and
-            plr_y + 32 >= obj_y and
-            plr_y <= obj_y + obj_height
-    )
 
 
-def sword_check_collision(enemy_x, enemy_y, enemy_width, enemy_height):
-    if not swinging:
-        return False
-
-    if plr_is_facing_right:
-        return (
-                plr_x + 90 >= enemy_x and
-                plr_x + 2 <= enemy_x + enemy_width and
-                plr_y + 48 >= enemy_y and
-                plr_y - 48 <= enemy_y + enemy_height
-        )
-    else:
-        return (
-                plr_x >= enemy_x and
-                plr_x - 52 <= enemy_x + enemy_width and
-                plr_y + 48 >= enemy_y and
-                plr_y - 48 <= enemy_y + enemy_height
-        )
 
 
 def draw_sword_idle():
@@ -545,12 +537,19 @@ def draw_sword_idle():
     else:
         window.blit(sword_sprite, (plr_x - 8, plr_y + 5))
 
+sword_swing_x = 0
+sword_swing_y = 0
 
 def draw_sword_swing():
+    global sword_swing_x, sword_swing_y
     if plr_is_facing_right:
-        window.blit(sword_swing_sprite, (plr_x, plr_y - 32))
+        sword_swing_x, sword_swing_y = plr_x, plr_y - 32
     else:
-        window.blit(pygame.transform.flip(sword_swing_sprite, True, False), (plr_x - 54, plr_y - 32))
+        sword_swing_x, sword_swing_y = plr_x - 54, plr_y - 32
+    if plr_is_facing_right:
+        window.blit(sword_swing_sprite, (sword_swing_x, sword_swing_y))
+    else:
+        window.blit(pygame.transform.flip(sword_swing_sprite, True, False), (sword_swing_x, sword_swing_y))
 
 
 sword_hit_enemies = set()
@@ -613,15 +612,6 @@ def update_fireballs():
         if (fireball['x'] < -200 or fireball['x'] > WIDTH + 200 or
                 fireball['y'] < -200 or fireball['y'] > HEIGHT + 200):
             active_fireballs.pop(i)
-
-
-def fireball_check_collision(fireball, enemy_x, enemy_y, enemy_width, enemy_height):
-    return (
-            fireball['x'] + fireball_size[0] >= enemy_x and
-            fireball['x'] <= enemy_x + enemy_width and
-            fireball['y'] + fireball_size[1] >= enemy_y and
-            fireball['y'] <= enemy_y + enemy_height
-    )
 
 
 def fireball_hit_enemy(fireball_index):
@@ -759,7 +749,7 @@ def update_xp_orbs():
 
         window.blit(xp_orb_sprite, (xp_x, xp_y))
 
-        if player_check_collision(xp_x, xp_y, 16, 16):
+        if player_mask.overlap(xp_mask, (xp_x - plr_x, xp_y - plr_y)):
             pickupXP_sfx.play()
             xp += xpgain
             xp_orbs.pop(i)
@@ -807,26 +797,30 @@ def update_enemies():
         dx += sep_force_x
         dy += sep_force_y
 
-        distance = math.sqrt(dx ** 2 + dy ** 2)
-        if distance != 0:
-            dx /= distance
-            dy /= distance
-
         enemy_x += dx * enemy_speed
         enemy_y += dy * enemy_speed
 
-
         
 
+        if enemy_varient == "normal":
+            cur_enemy_mask = enemy_mask
+            cur_enemy_sprite = enemy_sprite
+        elif enemy_varient == "fast":
+            cur_enemy_mask = fast_enemy_mask
+            cur_enemy_sprite = fast_enemy_sprite
+        if enemy_varient == "tank":
+            cur_enemy_mask = tank_enemy_mask
+            cur_enemy_sprite = tank_enemy_sprite
+
         window.blit(
-            pygame.transform.flip(enemy_sprite, True, False)
-            if not enemy_is_facing_right else enemy_sprite,
+            pygame.transform.flip(cur_enemy_sprite, True, False)
+            if not enemy_is_facing_right else cur_enemy_sprite,
             (enemy_x, enemy_y)
         )
 
         for j in range(len(active_fireballs) - 1, -1, -1):
             fireball = active_fireballs[j]
-            if fireball_check_collision(fireball, enemy_x, enemy_y, 30, 32) and i not in fireball["hit_enemies"]:
+            if fireball_mask.overlap(cur_enemy_mask, (enemy_x - fireball["x"], enemy_y - fireball["y"])) and i not in fireball["hit_enemies"]:
                 damage_text(15, enemy_x, enemy_y)
                 enemyHit_sfx.play()
                 fireball["hit_enemies"].add(i)
@@ -837,7 +831,7 @@ def update_enemies():
                     active_fireballs.pop(j)
                 break
 
-        if sword_check_collision(enemy_x, enemy_y, 30, 32) and i not in sword_hit_enemies:
+        if sword_swing_mask.overlap(cur_enemy_mask, (enemy_x - sword_swing_x, enemy_y - sword_swing_y)) and i not in sword_hit_enemies and swinging:
             enemyHit_sfx.play()
             sword_hit_enemies.add(i)
             enemy_vx, enemy_vy = enemy_hit_knockback(enemy_x, enemy_y)
@@ -845,7 +839,7 @@ def update_enemies():
             enemy_health -= 10
 
         for knife in knives:
-            if knife[9] == 'attacking' and knife_mask.overlap(enemy_mask, (int(knife[0] - enemy_x), int(knife[1] - enemy_y))):
+            if knife[9] == 'attacking' and knife_mask.overlap(cur_enemy_mask, (int(knife[0] - enemy_x), int(knife[1] - enemy_y))):
                 now = time.time()
                 if i not in enemy_hit_timers or now - enemy_hit_timers[i] > 0.2:
                     enemyHit_sfx.play()
@@ -872,7 +866,7 @@ def update_enemies():
             spawn_xp(enemy_x, enemy_y)
             continue
 
-        if player_check_collision(enemy_x, enemy_y, 30, 32):
+        if player_mask.overlap(cur_enemy_mask, (plr_x - enemy_x, plr_y - enemy_y)):
             if time.time() - last_hit_time > 1:
                 playerHit_sfx.play()
                 plr_health -= 10
@@ -885,7 +879,7 @@ def update_enemies():
 
         enemy_x += enemy_vx
         enemy_y += enemy_vy
-        enemies[i] = [enemy_x, enemy_y, enemy_is_facing_right, enemy_health, enemy_vx, enemy_vy]
+        enemies[i] = [enemy_x, enemy_y, enemy_is_facing_right, enemy_health, enemy_vx, enemy_vy, enemy_varient, enemy_speed]
 
 def update_difficulty():
     global enemy_spawn_speed, xpgain
