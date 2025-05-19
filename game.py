@@ -15,7 +15,7 @@ clock = pygame.time.Clock()
 font = pygame.font.Font("pixelfont.ttf", 48)
 level_font = pygame.font.Font("pixelfont.ttf", 24)
 damage_font = pygame.font.Font("pixelfont.ttf", 16)
-damage_font_stroke = pygame.font.Font("pixelfont.ttf", 18)
+death_font = pygame.font.Font("pixelfont.ttf", 220)
 
 
 running = True
@@ -36,6 +36,8 @@ last_hit_time = time.time()
 knockback_velocity_x = 0
 knockback_velocity_y = 0
 
+on_death_screen = False
+
 attacking = False
 
 last_weapon_switch = 0
@@ -51,6 +53,7 @@ can_swing = True
 
 # XP system
 xp = 0
+xpgain = 5
 xp_orbs = []
 
 # Fireball system
@@ -108,6 +111,9 @@ enemy_mask = pygame.mask.from_surface(enemy_sprite)
 
 fireball_image = pygame.image.load("sprites/fireball.png").convert_alpha()
 fireball_icon = pygame.transform.scale(fireball_image, (160, 200))
+
+retryButton_image = pygame.image.load("sprites/retryButton.png").convert_alpha()
+retryButton_sprite = pygame.transform.scale(retryButton_image, (384, 96))
 
 
 # Sounds
@@ -270,7 +276,7 @@ def draw_health_bar(health, x, y):
     outline_rect = pygame.Rect(x - 15, y, bar_width, bar_height)
     fill_rect = pygame.Rect(x - 15, y, fill, bar_height)
     blank_rect = pygame.Rect(x - 15, y, bar_width, bar_height)
-    pygame.draw.rect(window, (150, 0, 0), blank_rect)
+    pygame.draw.rect(window, (100, 0, 0), blank_rect)
     pygame.draw.rect(window, (255, 0, 0), fill_rect)
     pygame.draw.rect(window, (0, 0, 0), outline_rect, 2)
 
@@ -714,7 +720,7 @@ def update_xp_orbs():
 
         if player_check_collision(xp_x, xp_y, 16, 16):
             pickupXP_sfx.play()
-            xp += 2
+            xp += xpgain
             xp_orbs.pop(i)
         else:
             xp_orbs[i] = [xp_x, xp_y]
@@ -725,21 +731,24 @@ damage_texts = []
 def damage_text(damage, x, y):
     global damage_texts
 
-    text = damage_font.render(str(damage), True, (255, 255, 255))
-    stroke = damage_font_stroke.render(str(damage), True, (0, 0, 0))
+    text = damage_font.render(f"-{str(damage)}", True, (255, 255, 255))
+    stroke = damage_font.render(f"-{str(damage)}", True, (0, 0, 0))
     damage_texts.append([text, stroke, x , y, time.time()])
     
 
 def render_damage_text():
     global damage_texts
     for text in damage_texts[:]:
-        #Stroke
-        window.blit(text[1], (text[2] - 1, text[3] - 1))
+        text_surface, stroke_surface, x, y, created_time = text
 
-        #Text
-        window.blit(text[0], (text[2], text[3]))
+        for dx in [-1, 1, 0, 0]:
+            for dy in [-1, 1, 0, 0]:
+                window.blit(stroke_surface, (x + dx, y + dy))
+
+        window.blit(text_surface, (x, y))
         text[3] -= 1
-        if time.time() - text[4] > 0.45:
+
+        if time.time() - created_time > 0.45:
             damage_texts.remove(text)
 
 
@@ -788,6 +797,7 @@ def update_enemies():
             enemyHit_sfx.play()
             sword_hit_enemies.add(i)
             enemy_vx, enemy_vy = enemy_hit_knockback(enemy_x, enemy_y)
+            damage_text(10, enemy_x, enemy_y)
             enemy_health -= 10
 
         
@@ -797,6 +807,7 @@ def update_enemies():
                 now = time.time()
                 if i not in enemy_hit_timers or now - enemy_hit_timers[i] > 0.2:
                     enemyHit_sfx.play()
+                    damage_text(2.5, enemy_x, enemy_y)
                     enemy_health -= 2.5
                     enemy_vx, enemy_vy = enemy_hit_knockback(enemy_x, enemy_y)
                     enemy_hit_timers[i] = now
@@ -822,7 +833,7 @@ def update_enemies():
         enemies[i] = [enemy_x, enemy_y, enemy_is_facing_right, enemy_health, enemy_vx, enemy_vy]
 
 def update_difficulty():
-    global enemy_spawn_speed
+    global enemy_spawn_speed, xpgain
 
     elapsed_time = time.time() - difficulty_start_time
 
@@ -830,16 +841,20 @@ def update_difficulty():
         enemy_spawn_speed = 1.2
     elif elapsed_time > 50:
         enemy_spawn_speed = 1
+        xpgain = 4
     elif elapsed_time > 100:
         enemy_spawn_speed = 0.5
+        xpgain = 3.5
     elif elapsed_time > 150:
         enemy_spawn_speed = 0.1
-    elif elapsed_time > 400:
+        xpgain = 3
+    elif elapsed_time > 300:
+        xpgain = 2.5
         enemy_spawn_speed = 0.08
     elif elapsed_time > 500:
         enemy_spawn_speed = 0.06
     elif elapsed_time > 600:
-        enemy_spawn_speed = 0.04
+        enemy_spawn_speed = 0.03
     elif elapsed_time > 800:
         enemy_spawn_speed = 0.02
 
@@ -921,10 +936,15 @@ def draw_game():
 
 
 def update_game_state():
-    global plr_health, second, time_passed, last_enemy_spawn, sword_hit
+    global plr_health, second, time_passed, last_enemy_spawn, sword_hit, on_death_screen
 
     if plr_health >= 100:
         plr_health = 100
+    
+    if plr_health <= 0:
+        death_screen()
+        on_death_screen = True
+        
 
     if time.time() - time_passed >= 1:
         second += 1
@@ -952,6 +972,46 @@ def update_game_state():
     if attacking:
         attack()
 
+def restartGame():
+    global enemies, inventory, knives, plr_x, plr_y, active_fireballs, current_weapon, plr_health
+
+    enemies.clear()
+    inventory.clear()
+    knives.clear()
+    active_fireballs.clear()
+    inventory = ["sword"]
+    current_weapon = "sword"
+    plr_health = 100
+    plr_x, plr_y = WIDTH // 2, HEIGHT // 2
+
+
+def death_screen():
+    global running, on_death_screen
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if mouse_x >= WIDTH // 2 - 192 and mouse_x <= WIDTH // 2 + 192 and mouse_y >= HEIGHT // 2 + 200 and mouse_y <= HEIGHT // 2 + 296:
+                    restartGame()
+                    click_sfx.play()
+                    on_death_screen = False
+    death_text = death_font.render("You Died", False, (255, 255, 255))
+    death_text_stroke = death_font.render("You Died", False, (0, 0, 0))
+
+    text_rect = death_text.get_rect()
+
+    center_x = WIDTH // 2 - text_rect.width // 2
+    center_y = HEIGHT // 2 - text_rect.height // 2
+
+    for dx in range(-6, 6):
+        for dy in range(-6, 6):
+            if dx != 0 or dy != 0:
+                window.blit(death_text_stroke, (center_x + dx, center_y - 200 + dy))
+
+    window.blit(death_text, (center_x, center_y - 200))
+    window.blit(retryButton_sprite, (WIDTH //2 - 192, HEIGHT//2 + 200))
 
 spawn_first_enemies()
 
@@ -960,6 +1020,8 @@ while running:
 
     if on_level_up_screen:
         handle_level_up_screen()
+    elif on_death_screen:
+        death_screen()
     else:
         handle_input()
         update_game_state()
